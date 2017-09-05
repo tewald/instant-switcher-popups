@@ -8,15 +8,54 @@
 // modified version to show the popup instantly instead of after a delay
 // of 150ms.
 
+const Clutter = imports.gi.Clutter;
 const SwitcherPopup = imports.ui.switcherPopup;
 const GLib = imports.gi.GLib;
 const Lang = imports.lang;
 const Main = imports.ui.main;
 const Mainloop = imports.mainloop;
 const Meta = imports.gi.Meta;
+const St = imports.gi.St;
 
 let originalShow;
+let originalGetPreferredWidth;
+let originalGetPreferredHeight;
+let originalAllocate;
 let primaryModifier;
+
+
+function alteredAllocate(actor, box, flags) {
+    let childBox = new Clutter.ActorBox();
+    let current_monitor = Main.layoutManager.currentMonitor;
+
+    let leftPadding = this.actor.get_theme_node().get_padding(St.Side.LEFT);
+    let rightPadding = this.actor.get_theme_node().get_padding(St.Side.RIGHT);
+    let hPadding = leftPadding + rightPadding;
+
+    // Allocate the switcherList
+    // We select a size based on an icon size that does not overflow the screen
+    let [childMinHeight, childNaturalHeight] = this._switcherList.actor.get_preferred_height(current_monitor.width - hPadding);
+    let [childMinWidth, childNaturalWidth] = this._switcherList.actor.get_preferred_width(childNaturalHeight);
+    childBox.x1 = Math.max(current_monitor.x + leftPadding, current_monitor.x + Math.floor((current_monitor.width - childNaturalWidth) / 2));
+    childBox.x2 = Math.min(current_monitor.x + current_monitor.width - rightPadding, childBox.x1 + childNaturalWidth);
+    childBox.y1 = current_monitor.y + Math.floor((current_monitor.height - childNaturalHeight) / 2);
+    childBox.y2 = childBox.y1 + childNaturalHeight;
+    this._switcherList.actor.allocate(childBox, flags);
+}
+
+function alteredGetPreferredWidth(actor, forHeight, alloc) {
+    let current_monitor = Main.layoutManager.currentMonitor;
+
+    alloc.min_size = current_monitor.width;
+    alloc.natural_size = current_monitor.width;
+}
+
+function alteredGetPreferredHeight(actor, forHeight, alloc) {
+    let current_monitor = Main.layoutManager.currentMonitor;
+
+    alloc.min_size = current_monitor.height;
+    alloc.natural_size = current_monitor.height;
+}
 
 function alteredShow(backward, binding, mask) {
     if (this._items.length == 0)
@@ -70,13 +109,22 @@ function alteredShow(backward, binding, mask) {
 
 function init() {
     originalShow = SwitcherPopup.SwitcherPopup.prototype.show;
+    originalGetPreferredWidth = SwitcherPopup.SwitcherPopup.prototype._getPreferredWidth;
+    originalGetPreferredHeight = SwitcherPopup.SwitcherPopup.prototype._getPreferredHeight;
+    originalAllocate = SwitcherPopup.SwitcherPopup.prototype._allocate;
     primaryModifier = SwitcherPopup.primaryModifier;
 }
 
 function enable() {
+    SwitcherPopup.SwitcherPopup.prototype._allocate = alteredAllocate;
+    SwitcherPopup.SwitcherPopup.prototype._getPreferredWidth = alteredGetPreferredWidth;
+    SwitcherPopup.SwitcherPopup.prototype._getPreferredHeight = alteredGetPreferredHeight;
     SwitcherPopup.SwitcherPopup.prototype.show = alteredShow;
 }
 
 function disable() {
     SwitcherPopup.SwitcherPopup.prototype.show = originalShow;
+    SwitcherPopup.SwitcherPopup.prototype._getPreferredWidth = originalGetPreferredWidth;
+    SwitcherPopup.SwitcherPopup.prototype._getPreferredHeight = originalGetPreferredHeight;
+    SwitcherPopup.SwitcherPopup.prototype._allocate = originalAllocate;
 }
